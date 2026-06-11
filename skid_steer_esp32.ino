@@ -5,24 +5,22 @@
 #define CAN_TX_PIN GPIO_NUM_27
 #define CAN_RX_PIN GPIO_NUM_26
 
-// MOTOR IDs (Assuming Left: 1, 2. Right: 3, 4)
+
 #define MOTOR_FL 1
 #define MOTOR_RL 2
 #define MOTOR_FR 3
 #define MOTOR_RR 4
 
-// L298N Pins for Actuators
-// L298N #1 (Frame - Actuators 1 & 2)
+
 #define FRAME_IN1 13
 #define FRAME_IN2 12
 #define FRAME_IN3 14
 #define FRAME_IN4 25
 
-// L298N #2 (Deposit - Actuator 3)
 #define DEPOSIT_IN1 33
 #define DEPOSIT_IN2 32
 
-// AK45-36 STRICT LIMITS
+// AK45-36 LIMITS 
 #define P_MIN -12.5f
 #define P_MAX  12.5f
 #define V_MIN -6.0f
@@ -34,220 +32,212 @@
 #define KD_MIN 0.0f
 #define KD_MAX 5.0f
 
-// ROBOT SPECIFICS
-#define WHEEL_RADIUS 0.05f 
-#define TRACK_WIDTH 0.4f // Distance between left and right wheels in meters (ADJUST THIS)
+#define WHEEL_RADIUS 0.3f 
+#define TRACK_WIDTH 0.4f 
 
 // State variables
 float target_v = 0.0;
 float target_w = 0.0;
-int frame_cmd = 0; // 1: extend, -1: retract, 0: stop
-int deposit_cmd = 0; // 1: extend, -1: retract, 0: stop
+int frame_cmd = 0;
+int deposit_cmd = 0; 
 bool estop = false;
 
 unsigned long previousMillis = 0;
 unsigned long last_cmd_time = 0;
 const unsigned long CMD_TIMEOUT_MS = 500;
 
-// Float to Unsigned Integer Conversion for protocol packing
+// Float to Unsigned Integer Conversion
 int float_to_uint(float x, float x_min, float x_max, int bits) {
-  float span = x_max - x_min;
-  float offset = x_min;
-  if(x < x_min) x = x_min;
-  else if(x > x_max) x = x_max;
-  return (int) ((x - offset) * ((float)((1 << bits) - 1)) / span);
+    float span = x_max - x_min;
+    float offset = x_min;
+    if(x < x_min) x = x_min;
+    else if(x > x_max) x = x_max;
+    return (int) ((x - offset) * ((float)((1 << bits) - 1)) / span);
 }
 
 // Send standard CAN frame
 void send_can_message(uint32_t id, uint8_t* data, uint8_t len) {
-  twai_message_t message;
-  message.identifier = id;
-  message.extd = 0;
-  message.rtr = 0;  
-  message.data_length_code = len;
-  for (int i = 0; i < len; i++) {
-      message.data[i] = data[i];
-  }
-  twai_transmit(&message, pdMS_TO_TICKS(1));
+    twai_message_t message = {};
+    message.identifier = id;
+    message.extd = 0;
+    message.rtr = 0;
+    message.data_length_code = len;
+    for (int i = 0; i < len; i++) {
+        message.data[i] = data[i];
+    }
+    twai_transmit(&message, pdMS_TO_TICKS(1));
 }
 
 // SPECIAL HEX COMMANDS
 void enter_mit_mode(uint32_t id) {
-  uint8_t data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFC};
-  send_can_message(id, data, 8);
-}
-void set_zero_position(uint32_t id) {
-  uint8_t data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE};
-  send_can_message(id, data, 8);
+    uint8_t data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFC};
+    send_can_message(id, data, 8);
 }
 
 // PACK AND SEND MIT COMMAND
 void pack_cmd(uint32_t id, float p_des, float v_des, float kp, float kd, float t_ff) {
-  p_des = constrain(p_des, P_MIN, P_MAX);
-  v_des = constrain(v_des, V_MIN, V_MAX);
-  kp = constrain(kp, KP_MIN, KP_MAX);
-  kd = constrain(kd, KD_MIN, KD_MAX);
-  t_ff = constrain(t_ff, T_MIN, T_MAX);
-  
-  int p_int = float_to_uint(p_des, P_MIN, P_MAX, 16);
-  int v_int = float_to_uint(v_des, V_MIN, V_MAX, 12);
-  int kp_int = float_to_uint(kp, KP_MIN, KP_MAX, 12);
-  int kd_int = float_to_uint(kd, KD_MIN, KD_MAX, 12);
-  int t_int = float_to_uint(t_ff, T_MIN, T_MAX, 12);
-  
-  uint8_t data[8];
-  data[0] = p_int >> 8;                          
-  data[1] = p_int & 0xFF;                        
-  data[2] = v_int >> 4;                          
-  data[3] = ((v_int & 0xF) << 4) | (kp_int >> 8);
-  data[4] = kp_int & 0xFF;                        
-  data[5] = kd_int >> 4;                          
-  data[6] = ((kd_int & 0xF) << 4) | (t_int >> 8);
-  data[7] = t_int & 0xFF;                        
-  
-  send_can_message(id, data, 8);
+    p_des = constrain(p_des, P_MIN, P_MAX);
+    v_des = constrain(v_des, V_MIN, V_MAX);
+    kp = constrain(kp, KP_MIN, KP_MAX);
+    kd = constrain(kd, KD_MIN, KD_MAX);
+    t_ff = constrain(t_ff, T_MIN, T_MAX);
+    
+    int p_int = float_to_uint(p_des, P_MIN, P_MAX, 16);
+    int v_int = float_to_uint(v_des, V_MIN, V_MAX, 12);
+    int kp_int = float_to_uint(kp, KP_MIN, KP_MAX, 12);
+    int kd_int = float_to_uint(kd, KD_MIN, KD_MAX, 12);
+    int t_int = float_to_uint(t_ff, T_MIN, T_MAX, 12);
+    
+    uint8_t data[8];
+    data[0] = p_int >> 8;                          
+    data[1] = p_int & 0xFF;
+    data[2] = v_int >> 4;                          
+    data[3] = ((v_int & 0xF) << 4) | (kp_int >> 8);
+    data[4] = kp_int & 0xFF;                        
+    data[5] = kd_int >> 4;                          
+    data[6] = ((kd_int & 0xF) << 4) | (t_int >> 8);
+    data[7] = t_int & 0xFF;                        
+    
+    send_can_message(id, data, 8);
 }
 
 void stop_all_actuators() {
-  digitalWrite(FRAME_IN1, LOW);
-  digitalWrite(FRAME_IN2, LOW);
-  digitalWrite(FRAME_IN3, LOW);
-  digitalWrite(FRAME_IN4, LOW);
-  digitalWrite(DEPOSIT_IN1, LOW);
-  digitalWrite(DEPOSIT_IN2, LOW);
+    digitalWrite(FRAME_IN1, LOW);
+    digitalWrite(FRAME_IN2, LOW);
+    digitalWrite(FRAME_IN3, LOW);
+    digitalWrite(FRAME_IN4, LOW);
+    digitalWrite(DEPOSIT_IN1, LOW);
+    digitalWrite(DEPOSIT_IN2, LOW);
 }
 
 void parse_serial_command(String cmd) {
-  // Expected format: "v,w,frame_cmd,deposit_cmd,estop"
-  // Example: "0.5,-0.2,1,0,0"
-  int commaIndex1 = cmd.indexOf(',');
-  int commaIndex2 = cmd.indexOf(',', commaIndex1 + 1);
-  int commaIndex3 = cmd.indexOf(',', commaIndex2 + 1);
-  int commaIndex4 = cmd.indexOf(',', commaIndex3 + 1);
+    int commaIndex1 = cmd.indexOf(',');
+    int commaIndex2 = cmd.indexOf(',', commaIndex1 + 1);
+    int commaIndex3 = cmd.indexOf(',', commaIndex2 + 1);
+    int commaIndex4 = cmd.indexOf(',', commaIndex3 + 1);
 
-  if (commaIndex1 > 0 && commaIndex2 > 0 && commaIndex3 > 0 && commaIndex4 > 0) {
-    target_v = cmd.substring(0, commaIndex1).toFloat();
-    target_w = cmd.substring(commaIndex1 + 1, commaIndex2).toFloat();
-    frame_cmd = cmd.substring(commaIndex2 + 1, commaIndex3).toInt();
-    deposit_cmd = cmd.substring(commaIndex3 + 1, commaIndex4).toInt();
-    estop = cmd.substring(commaIndex4 + 1).toInt() == 1;
-    
-    last_cmd_time = millis();
-  }
+    if (commaIndex1 > 0 && commaIndex2 > 0 && commaIndex3 > 0 && commaIndex4 > 0) {
+        target_v = cmd.substring(0, commaIndex1).toFloat();
+        target_w = cmd.substring(commaIndex1 + 1, commaIndex2).toFloat();
+        frame_cmd = cmd.substring(commaIndex2 + 1, commaIndex3).toInt();
+        deposit_cmd = cmd.substring(commaIndex3 + 1, commaIndex4).toInt();
+        estop = cmd.substring(commaIndex4 + 1).toInt() == 1;
+        
+        last_cmd_time = millis();
+    }
+}
+
+// Non-blocking serial line reader
+char serial_buf[64];
+uint8_t serial_idx = 0;
+void read_serial_nonblocking() {
+    while (Serial.available() > 0) {
+        char c = Serial.read();
+        if (c == '\n') {
+            serial_buf[serial_idx] = '\0';
+            parse_serial_command(String(serial_buf));
+            serial_idx = 0;
+        } else if (c != '\r') {
+            if (serial_idx < sizeof(serial_buf) - 1) {
+                serial_buf[serial_idx++] = c;
+            } else {
+                serial_idx = 0; // Prevent overflow
+            }
+        }
+    }
 }
 
 void setup() {
-  Serial.begin(115200);
-  
-  // Setup Actuator Pins
-  pinMode(FRAME_IN1, OUTPUT);
-  pinMode(FRAME_IN2, OUTPUT);
-  pinMode(FRAME_IN3, OUTPUT);
-  pinMode(FRAME_IN4, OUTPUT);
-  pinMode(DEPOSIT_IN1, OUTPUT);
-  pinMode(DEPOSIT_IN2, OUTPUT);
-  stop_all_actuators();
+    Serial.begin(115200);
+    
+    pinMode(FRAME_IN1, OUTPUT);
+    pinMode(FRAME_IN2, OUTPUT);
+    pinMode(FRAME_IN3, OUTPUT);
+    pinMode(FRAME_IN4, OUTPUT);
+    pinMode(DEPOSIT_IN1, OUTPUT);
+    pinMode(DEPOSIT_IN2, OUTPUT);
+    stop_all_actuators();
 
-  // Initialize CAN Driver
-  twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_NORMAL);
-  twai_timing_config_t t_config = TWAI_TIMING_CONFIG_1MBITS();
-  twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-  
-  if (twai_driver_install(&g_config, &t_config, &f_config) == ESP_OK) {
-      twai_start();
-  }
-  
-  // Wake up motors
-  delay(1000);
-  enter_mit_mode(MOTOR_FL);
-  enter_mit_mode(MOTOR_RL);
-  enter_mit_mode(MOTOR_FR);
-  enter_mit_mode(MOTOR_RR);
-  delay(100);
-  
-  set_zero_position(MOTOR_FL);
-  set_zero_position(MOTOR_RL);
-  set_zero_position(MOTOR_FR);
-  set_zero_position(MOTOR_RR);
-  delay(100);
+    twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_NORMAL);
+    twai_timing_config_t t_config = TWAI_TIMING_CONFIG_1MBITS();
+    twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+    
+    if (twai_driver_install(&g_config, &t_config, &f_config) == ESP_OK) {
+        twai_start();
+    }
+    
+    delay(1000);
+    enter_mit_mode(MOTOR_FL);
+    enter_mit_mode(MOTOR_RL);
+    enter_mit_mode(MOTOR_FR);
+    enter_mit_mode(MOTOR_RR);
+    delay(100);
+
 }
 
 void loop() {
-  // Read Serial commands from Jetson
-  if (Serial.available() > 0) {
-    String cmd = Serial.readStringUntil('\n');
-    parse_serial_command(cmd);
-  }
-  
-  unsigned long currentMillis = millis();
-  
-  // Safety timeout check
-  if (currentMillis - last_cmd_time > CMD_TIMEOUT_MS) {
-      target_v = 0.0;
-      target_w = 0.0;
-      frame_cmd = 0;
-      deposit_cmd = 0;
-  }
-  
-  // E-Stop handling
-  if (estop) {
-      target_v = 0.0;
-      target_w = 0.0;
-      frame_cmd = 0;
-      deposit_cmd = 0;
-      stop_all_actuators();
-  } else {
-      // Frame Actuators
-      if (frame_cmd == 1) { // Extend
-        digitalWrite(FRAME_IN1, HIGH);
-        digitalWrite(FRAME_IN2, LOW);
-        digitalWrite(FRAME_IN3, HIGH);
-        digitalWrite(FRAME_IN4, LOW);
-      } else if (frame_cmd == -1) { // Retract
-        digitalWrite(FRAME_IN1, LOW);
-        digitalWrite(FRAME_IN2, HIGH);
-        digitalWrite(FRAME_IN3, LOW);
-        digitalWrite(FRAME_IN4, HIGH);
-      } else { // Stop
-        digitalWrite(FRAME_IN1, LOW);
-        digitalWrite(FRAME_IN2, LOW);
-        digitalWrite(FRAME_IN3, LOW);
-        digitalWrite(FRAME_IN4, LOW);
-      }
+    read_serial_nonblocking();
+    unsigned long currentMillis = millis();
+    
+    if (currentMillis - last_cmd_time > CMD_TIMEOUT_MS) {
+        target_v = 0.0;
+        target_w = 0.0;
+        frame_cmd = 0;
+        deposit_cmd = 0;
+    }
+    
+    if (estop) {
+        target_v = 0.0;
+        target_w = 0.0;
+        frame_cmd = 0;
+        deposit_cmd = 0;
+        stop_all_actuators();
+    } else {
+        if (frame_cmd == 1) {
+            digitalWrite(FRAME_IN1, HIGH);
+            digitalWrite(FRAME_IN2, LOW);
+            digitalWrite(FRAME_IN3, HIGH);
+            digitalWrite(FRAME_IN4, LOW);
+        } else if (frame_cmd == -1) {
+            digitalWrite(FRAME_IN1, LOW);
+            digitalWrite(FRAME_IN2, HIGH);
+            digitalWrite(FRAME_IN3, LOW);
+            digitalWrite(FRAME_IN4, HIGH);
+        } else {
+            digitalWrite(FRAME_IN1, LOW);
+            digitalWrite(FRAME_IN2, LOW);
+            digitalWrite(FRAME_IN3, LOW);
+            digitalWrite(FRAME_IN4, LOW);
+        }
 
-      // Deposit Actuator
-      if (deposit_cmd == 1) { // Extend
-        digitalWrite(DEPOSIT_IN1, HIGH);
-        digitalWrite(DEPOSIT_IN2, LOW);
-      } else if (deposit_cmd == -1) { // Retract
-        digitalWrite(DEPOSIT_IN1, LOW);
-        digitalWrite(DEPOSIT_IN2, HIGH);
-      } else { // Stop
-        digitalWrite(DEPOSIT_IN1, LOW);
-        digitalWrite(DEPOSIT_IN2, LOW);
-      }
-  }
-  
-  // Send CAN commands at ~100Hz
-  if (currentMillis - previousMillis >= 10) {
-      previousMillis = currentMillis;
-      
-      // Skid Steer Kinematics
-      float v_left = target_v - (target_w * TRACK_WIDTH / 2.0);
-      float v_right = target_v + (target_w * TRACK_WIDTH / 2.0);
-      
-      // Convert linear speed (m/s) to angular speed (rad/s)
-      float w_left = v_left / WHEEL_RADIUS;
-      float w_right = v_right / WHEEL_RADIUS;
-      
-      // Assuming right side motors are mounted oppositely, they might need to be inverted
-      w_right = -w_right; 
-
-      // Send to 4 motors
-      // Position = 0.0, Velocity = w_*, Kp = 0.0, Kd = 2.0 (Damping), Torque = 0.0
-      pack_cmd(MOTOR_FL, 0.0, w_left, 0.0, 2.0, 0.0);
-      pack_cmd(MOTOR_RL, 0.0, w_left, 0.0, 2.0, 0.0);
-      pack_cmd(MOTOR_FR, 0.0, w_right, 0.0, 2.0, 0.0);
-      pack_cmd(MOTOR_RR, 0.0, w_right, 0.0, 2.0, 0.0);
-  }
+        if (deposit_cmd == 1) { 
+            digitalWrite(DEPOSIT_IN1, HIGH);
+            digitalWrite(DEPOSIT_IN2, LOW);
+        } else if (deposit_cmd == -1) { 
+            digitalWrite(DEPOSIT_IN1, LOW);
+            digitalWrite(DEPOSIT_IN2, HIGH);
+        } else { 
+            digitalWrite(DEPOSIT_IN1, LOW);
+            digitalWrite(DEPOSIT_IN2, LOW);
+        }
+    }
+    
+    if (currentMillis - previousMillis >= 10) {
+        previousMillis = currentMillis;
+        
+        float v_left = target_v - (target_w * TRACK_WIDTH / 2.0);
+        float v_right = target_v + (target_w * TRACK_WIDTH / 2.0);
+        
+        float w_left = v_left / WHEEL_RADIUS;
+        float w_right = v_right / WHEEL_RADIUS;
+        
+    
+        w_right = -w_right;
+        
+        // Command format: Position, Velocity, Kp (stiffness), Kd (damping), Torque
+        pack_cmd(MOTOR_FL, 0.0, w_left, 0.0, 2.0, 0.0);
+        pack_cmd(MOTOR_RL, 0.0, w_left, 0.0, 2.0, 0.0);
+        pack_cmd(MOTOR_FR, 0.0, w_right, 0.0, 2.0, 0.0);
+        pack_cmd(MOTOR_RR, 0.0, w_right, 0.0, 2.0, 0.0);
+    }
 }
