@@ -54,10 +54,8 @@ def camera_receiver(port, name, width, height):
         
     # GStreamer pipeline to receive UDP, depayload, decode, and convert to BGR
     cap = cv2.VideoCapture(f"udp://0.0.0.0:{port}", cv2.CAP_FFMPEG)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Force lowest latency possibl
-    if not cap.isOpened():
-        # Fallback if OpenCV was built without GStreamer
-        cap = cv2.VideoCapture(f"udp://127.0.0.1:{port}", cv2.CAP_FFMPEG)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) # Force lowest latency possible
+  
         
     while True:
         ret, frame = cap.read()
