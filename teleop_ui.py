@@ -13,7 +13,7 @@ except ImportError:
     print("Warning: OpenCV (cv2) or numpy not installed. Camera feeds will be disabled.")
     print("To enable, run: pip install opencv-python numpy")
 
-JETSON_IP = "192.168.8.1"
+JETSON_IP = "192.168.8.160"
 JETSON_PORT = 5005
 TELEMETRY_PORT = 5006
 
