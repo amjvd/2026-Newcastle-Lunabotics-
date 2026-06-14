@@ -12,13 +12,11 @@
 #define MOTOR_RR 4
 
 
-#define FRAME_IN1 13
-#define FRAME_IN2 12
-#define FRAME_IN3 14
-#define FRAME_IN4 25
+#define FRAME_IN1 18
+#define FRAME_IN2 23
 
-#define DEPOSIT_IN1 33
-#define DEPOSIT_IN2 32
+#define DEPOSIT_IN1 19
+#define DEPOSIT_IN2 21
 
 // AK45-36 LIMITS 
 #define P_MIN -12.5f
@@ -45,6 +43,13 @@ bool estop = false;
 unsigned long previousMillis = 0;
 unsigned long last_cmd_time = 0;
 const unsigned long CMD_TIMEOUT_MS = 500;
+
+// Unsigned Integer to Float Conversion
+float uint_to_float(int x_int, float x_min, float x_max, int bits) {
+    float span = x_max - x_min;
+    float offset = x_min;
+    return ((float)x_int) * span / ((float)((1 << bits) - 1)) + offset;
+}
 
 // Float to Unsigned Integer Conversion
 int float_to_uint(float x, float x_min, float x_max, int bits) {
@@ -101,11 +106,33 @@ void pack_cmd(uint32_t id, float p_des, float v_des, float kp, float kd, float t
     send_can_message(id, data, 8);
 }
 
+void receive_can_messages() {
+    twai_message_t message;
+    while (twai_receive(&message, 0) == ESP_OK) {
+        if (message.data_length_code >= 7) {
+            uint8_t id = message.data[0];
+            int p_int = (message.data[1] << 8) | message.data[2];
+            int v_int = (message.data[3] << 4) | (message.data[4] >> 4);
+            int t_int = ((message.data[4] & 0xF) << 8) | message.data[5];
+            int temp = message.data[6];
+
+            float p = uint_to_float(p_int, P_MIN, P_MAX, 16);
+            float v = uint_to_float(v_int, V_MIN, V_MAX, 12);
+            float t = uint_to_float(t_int, T_MIN, T_MAX, 12);
+
+            Serial.print("M,");
+            Serial.print(id); Serial.print(",");
+            Serial.print(p, 2); Serial.print(",");
+            Serial.print(v, 2); Serial.print(",");
+            Serial.print(t, 2); Serial.print(",");
+            Serial.println(temp);
+        }
+    }
+}
+
 void stop_all_actuators() {
     digitalWrite(FRAME_IN1, LOW);
     digitalWrite(FRAME_IN2, LOW);
-    digitalWrite(FRAME_IN3, LOW);
-    digitalWrite(FRAME_IN4, LOW);
     digitalWrite(DEPOSIT_IN1, LOW);
     digitalWrite(DEPOSIT_IN2, LOW);
 }
@@ -152,8 +179,6 @@ void setup() {
     
     pinMode(FRAME_IN1, OUTPUT);
     pinMode(FRAME_IN2, OUTPUT);
-    pinMode(FRAME_IN3, OUTPUT);
-    pinMode(FRAME_IN4, OUTPUT);
     pinMode(DEPOSIT_IN1, OUTPUT);
     pinMode(DEPOSIT_IN2, OUTPUT);
     stop_all_actuators();
@@ -177,6 +202,7 @@ void setup() {
 
 void loop() {
     read_serial_nonblocking();
+    receive_can_messages();
     unsigned long currentMillis = millis();
     
     if (currentMillis - last_cmd_time > CMD_TIMEOUT_MS) {
@@ -196,18 +222,12 @@ void loop() {
         if (frame_cmd == 1) {
             digitalWrite(FRAME_IN1, HIGH);
             digitalWrite(FRAME_IN2, LOW);
-            digitalWrite(FRAME_IN3, HIGH);
-            digitalWrite(FRAME_IN4, LOW);
         } else if (frame_cmd == -1) {
             digitalWrite(FRAME_IN1, LOW);
             digitalWrite(FRAME_IN2, HIGH);
-            digitalWrite(FRAME_IN3, LOW);
-            digitalWrite(FRAME_IN4, HIGH);
         } else {
             digitalWrite(FRAME_IN1, LOW);
             digitalWrite(FRAME_IN2, LOW);
-            digitalWrite(FRAME_IN3, LOW);
-            digitalWrite(FRAME_IN4, LOW);
         }
 
         if (deposit_cmd == 1) { 

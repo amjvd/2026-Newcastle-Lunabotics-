@@ -120,7 +120,9 @@ def main():
             elif auto_deposit_active:
                 elapsed = current_time - auto_deposit_start_time
                 if elapsed < 3.0:
-                    deposit_cmd = 1 # UPDATED: Extend actuator to dump 
+                    deposit_cmd = -1 # Retract actuator to dump 
+                elif elapsed < 6.0:
+                    deposit_cmd = 1  # Extend actuator back to normal
                 else:
                     auto_deposit_active = False
 
@@ -144,9 +146,9 @@ def main():
 
                 # UPDATED MANUAL DOOR MAPPING
                 if lb_pressed and not rb_pressed:
-                    deposit_cmd = 1 # Extend (Dump)
+                    deposit_cmd = -1 # Retract (Dump)
                 elif rb_pressed and not lb_pressed:
-                    deposit_cmd = -1 # Retract (Close/Hold)
+                    deposit_cmd = 1 # Extend (Close/Normal)
 
             msg = f"{v:.2f},{w:.2f},{frame_cmd},{deposit_cmd},0"
             sock.sendto(msg.encode('utf-8'), (JETSON_IP, JETSON_PORT))
