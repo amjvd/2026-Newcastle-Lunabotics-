@@ -7,14 +7,15 @@
 
 
 #define MOTOR_FL 1
-#define MOTOR_RL 2
-#define MOTOR_FR 3
+#define MOTOR_RL 3
+#define MOTOR_FR 2
 #define MOTOR_RR 4
 
+// --- UPDATED CYTRON PINS FOR FRAME ---
+#define FRAME_DIR 18
+#define FRAME_PWM 23
 
-#define FRAME_IN1 18
-#define FRAME_IN2 23
-
+// (Deposit remains unchanged for L298N)
 #define DEPOSIT_IN1 19
 #define DEPOSIT_IN2 21
 
@@ -30,8 +31,8 @@
 #define KD_MIN 0.0f
 #define KD_MAX 5.0f
 
-#define WHEEL_RADIUS 0.3f 
-#define TRACK_WIDTH 0.4f 
+#define WHEEL_RADIUS 0.15f 
+#define TRACK_WIDTH 0.7f 
 
 // State variables
 float target_v = 0.0;
@@ -130,9 +131,11 @@ void receive_can_messages() {
     }
 }
 
+// --- UPDATED STOP LOGIC ---
 void stop_all_actuators() {
-    digitalWrite(FRAME_IN1, LOW);
-    digitalWrite(FRAME_IN2, LOW);
+    digitalWrite(FRAME_PWM, LOW); // Drops power to 0
+    digitalWrite(FRAME_DIR, LOW); 
+    
     digitalWrite(DEPOSIT_IN1, LOW);
     digitalWrite(DEPOSIT_IN2, LOW);
 }
@@ -177,10 +180,12 @@ void read_serial_nonblocking() {
 void setup() {
     Serial.begin(115200);
     
-    pinMode(FRAME_IN1, OUTPUT);
-    pinMode(FRAME_IN2, OUTPUT);
+    // --- UPDATED PIN MODES ---
+    pinMode(FRAME_DIR, OUTPUT);
+    pinMode(FRAME_PWM, OUTPUT);
     pinMode(DEPOSIT_IN1, OUTPUT);
     pinMode(DEPOSIT_IN2, OUTPUT);
+    
     stop_all_actuators();
 
     twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_NORMAL);
@@ -219,15 +224,17 @@ void loop() {
         deposit_cmd = 0;
         stop_all_actuators();
     } else {
+        
+        // --- UPDATED CYTRON LOGIC ---
         if (frame_cmd == 1) {
-            digitalWrite(FRAME_IN1, HIGH);
-            digitalWrite(FRAME_IN2, LOW);
+            digitalWrite(FRAME_DIR, HIGH); // Set Direction 1
+            digitalWrite(FRAME_PWM, HIGH); // APPLY POWER
         } else if (frame_cmd == -1) {
-            digitalWrite(FRAME_IN1, LOW);
-            digitalWrite(FRAME_IN2, HIGH);
+            digitalWrite(FRAME_DIR, LOW);  // Set Direction 2
+            digitalWrite(FRAME_PWM, HIGH); // APPLY POWER
         } else {
-            digitalWrite(FRAME_IN1, LOW);
-            digitalWrite(FRAME_IN2, LOW);
+            digitalWrite(FRAME_PWM, LOW);  // CUT POWER
+            // (DIR doesn't matter when PWM is LOW)
         }
 
         if (deposit_cmd == 1) { 
