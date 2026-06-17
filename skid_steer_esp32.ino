@@ -5,19 +5,19 @@
 #define CAN_TX_PIN GPIO_NUM_27
 #define CAN_RX_PIN GPIO_NUM_26
 
-
 #define MOTOR_FL 1
 #define MOTOR_RL 3
 #define MOTOR_FR 2
 #define MOTOR_RR 4
 
-// --- UPDATED CYTRON PINS FOR FRAME ---
-#define FRAME_DIR 18
-#define FRAME_PWM 23
+// --- EMERGENCY PIT-STOP PINS ---
+// The Cytron is physically plugged into 19 (acting as PWM/Power) and 21 (acting as DIR)
+#define CYTRON_PWM 19
+#define CYTRON_DIR 21
 
-// (Deposit remains unchanged for L298N)
-#define DEPOSIT_IN1 19
-#define DEPOSIT_IN2 21
+// The old frame pins (18 & 23) are physically empty right now
+#define UNUSED_IN1 18
+#define UNUSED_IN2 23
 
 // AK45-36 LIMITS 
 #define P_MIN -12.5f
@@ -131,13 +131,11 @@ void receive_can_messages() {
     }
 }
 
-// --- UPDATED STOP LOGIC ---
 void stop_all_actuators() {
-    digitalWrite(FRAME_PWM, LOW); // Drops power to 0
-    digitalWrite(FRAME_DIR, LOW); 
-    
-    digitalWrite(DEPOSIT_IN1, LOW);
-    digitalWrite(DEPOSIT_IN2, LOW);
+    digitalWrite(CYTRON_PWM, LOW);
+    digitalWrite(CYTRON_DIR, LOW);
+    digitalWrite(UNUSED_IN1, LOW);
+    digitalWrite(UNUSED_IN2, LOW);
 }
 
 void parse_serial_command(String cmd) {
@@ -180,11 +178,10 @@ void read_serial_nonblocking() {
 void setup() {
     Serial.begin(115200);
     
-    // --- UPDATED PIN MODES ---
-    pinMode(FRAME_DIR, OUTPUT);
-    pinMode(FRAME_PWM, OUTPUT);
-    pinMode(DEPOSIT_IN1, OUTPUT);
-    pinMode(DEPOSIT_IN2, OUTPUT);
+    pinMode(CYTRON_PWM, OUTPUT);
+    pinMode(CYTRON_DIR, OUTPUT);
+    pinMode(UNUSED_IN1, OUTPUT);
+    pinMode(UNUSED_IN2, OUTPUT);
     
     stop_all_actuators();
 
@@ -202,7 +199,6 @@ void setup() {
     enter_mit_mode(MOTOR_FR);
     enter_mit_mode(MOTOR_RR);
     delay(100);
-
 }
 
 void loop() {
@@ -225,27 +221,28 @@ void loop() {
         stop_all_actuators();
     } else {
         
-        // --- UPDATED CYTRON LOGIC ---
-        if (frame_cmd == 1) {
-            digitalWrite(FRAME_DIR, HIGH); // Set Direction 1
-            digitalWrite(FRAME_PWM, HIGH); // APPLY POWER
-        } else if (frame_cmd == -1) {
-            digitalWrite(FRAME_DIR, LOW);  // Set Direction 2
-            digitalWrite(FRAME_PWM, HIGH); // APPLY POWER
-        } else {
-            digitalWrite(FRAME_PWM, LOW);  // CUT POWER
-            // (DIR doesn't matter when PWM is LOW)
+        // --- BUTTONS A & Y (FRAME CONTROL TO CYTRON) ---
+        if (frame_cmd == 1) {             // Button A 
+            digitalWrite(CYTRON_PWM, HIGH); // POWER ON
+            digitalWrite(CYTRON_DIR, LOW);  // DIR 1
+        } else if (frame_cmd == -1) {     // Button Y 
+            digitalWrite(CYTRON_PWM, HIGH); // POWER ON (Needed for Cytron!)
+            digitalWrite(CYTRON_DIR, HIGH); // DIR 2
+        } else {                          
+            digitalWrite(CYTRON_PWM, LOW);  // POWER OFF
+            digitalWrite(CYTRON_DIR, LOW);
         }
 
+        // --- BUMPERS LB & RB (DUMMY CONTROL FOR EMPTY PINS) ---
         if (deposit_cmd == 1) { 
-            digitalWrite(DEPOSIT_IN1, HIGH);
-            digitalWrite(DEPOSIT_IN2, LOW);
+            digitalWrite(UNUSED_IN1, HIGH);
+            digitalWrite(UNUSED_IN2, LOW);
         } else if (deposit_cmd == -1) { 
-            digitalWrite(DEPOSIT_IN1, LOW);
-            digitalWrite(DEPOSIT_IN2, HIGH);
+            digitalWrite(UNUSED_IN1, LOW);
+            digitalWrite(UNUSED_IN2, HIGH);
         } else { 
-            digitalWrite(DEPOSIT_IN1, LOW);
-            digitalWrite(DEPOSIT_IN2, LOW);
+            digitalWrite(UNUSED_IN1, LOW);
+            digitalWrite(UNUSED_IN2, LOW);
         }
     }
     
@@ -258,7 +255,6 @@ void loop() {
         float w_left = v_left / WHEEL_RADIUS;
         float w_right = v_right / WHEEL_RADIUS;
         
-    
         w_right = -w_right;
         
         // Command format: Position, Velocity, Kp (stiffness), Kd (damping), Torque
